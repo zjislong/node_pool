@@ -11,9 +11,14 @@
 
 %% User interface 
 
--spec new_pool(Name::atom()) -> {ok, pid()} | {error, {already_started, pid()} | term()}.
+-spec new_pool(Name::atom()) -> {ok, pid()}.
 new_pool(Name) ->
-    supervisor:start_child(node_pool_sup, [Name]).
+	case global:whereis_name(Name) of
+	        Pid when is_pid(Pid) ->
+	            {ok, Pid};
+	        undefined ->
+	            supervisor:start_child(node_pool_sup, [Name])
+    end.
 
 -spec delete_pool(Name::atom()) -> ok | {error, not_found}.
 delete_pool(Name) ->
