@@ -1,8 +1,8 @@
 %%
 %% %CopyrightBegin%
-%% 
+%%
 %% Copyright Ericsson AB 1996-2016. All Rights Reserved.
-%% 
+%%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
 %% You may obtain a copy of the License at
@@ -14,7 +14,7 @@
 %% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
-%% 
+%%
 %% %CopyrightEnd%
 %%
 -module(node_pool_srv).
@@ -38,14 +38,14 @@
 % User interface Exports ...
 -export([start_link/1]).
 
-%% Internal Exports 
--export([statistic_collector/1,
+%% Internal Exports
+-export([
 	 init/1,
 	 handle_call/3,
 	 handle_cast/2,
 	 handle_info/2,
 	 terminate/2]).
-	 
+
 %% Start up using the .hosts.erlang fil
 -spec start_link(Name::atom()) -> {ok,pid()}.
 start_link(Name) ->
@@ -62,80 +62,34 @@ handle_call(get_nodes, _From, Nodes)->
     {reply, Nodes, Nodes};
 handle_call(get_node, _From, []) ->
     {reply, error, []};
-handle_call(get_node, _From, [{Load,N}|Tail]) ->
-    {reply, N, Tail++[{Load+1, N}]};
-handle_call({attach, Name, Node}, _From, Nodes) ->
-    case lists:keymember(Node, 2, Nodes) of
-	true ->
-	    {reply, already_attached, Nodes};
-	false ->
-	    erlang:monitor_node(Node, true),
-	    spawn_link(Node, ?MODULE, statistic_collector, [Name]),
-	    {reply, attached, Nodes++[{999999,Node}]}
-    end.
+handle_call(get_node, _From, Nodes) ->
+    {N, Nodes1} = get_node(Nodes),
+    {reply, N, Nodes1};
+handle_call({attach, Node, Weight}, _From, Nodes) ->
+    erlang:monitor_node(Node, true),
+    {reply, attached, lists:keystore(Node, 3, Nodes, {0,Weight,Node})}.
 
 handle_cast(_, Nodes) ->
     {noreply, Nodes}.
 
-handle_info({Node,load,Load}, Nodes) ->
-    Nodes2 = insert_node({Load,Node}, Nodes),
-    {noreply, Nodes2};
 handle_info({nodedown, Node}, Nodes) ->
-    {noreply, lists:keydelete(Node, 2, Nodes)};
+    {noreply, lists:keydelete(Node, 3, Nodes)};
 handle_info(_, Nodes) ->  %% The EXIT signals etc.etc
     {noreply, Nodes}.
 
 terminate(_Reason, _Nodes) ->
     ok.
 
-insert_node({Load,Node},[{L,Node}|Tail]) when Load > L ->
-    %% We have a raised load here
-    pure_insert({Load,Node},Tail);
-insert_node({Load,Node},[{L,N}|Tail]) when Load =< L ->
-    %% Move forward in the list
-    T = lists:keydelete(Node,2,[{L,N}|Tail]),
-    [{Load,Node} | T];
-insert_node(Ln,[H|T]) ->
-    [H | insert_node(Ln,T)];
-insert_node(X,[]) ->          % Can't happen
-    error_logger:error_msg("Pool_master: Bad node list X=~w\n", [X]),
-    exit(crash).
+get_node([{CurWeight, Weight, Node}|Nodes]) ->
+    get_node(Nodes, {CurWeight+Weight, Weight, Node}, CurWeight+Weight, []).
 
-pure_insert({Load,Node},[]) ->
-    [{Load,Node}];
-pure_insert({Load,Node},[{L,N}|Tail]) when Load < L ->
-    [{Load,Node}, {L,N} | Tail];
-pure_insert(L,[H|T]) -> [H|pure_insert(L,T)].
-
-statistic_collector(Name) ->
-    statistic_collector(Name,5).
-
-statistic_collector(_Name, 0)->
-    exit(normal);
-statistic_collector(Name,I)->
-    case global:whereis_name(Name) of
-	    undefined ->
-            sleep(300),
-            statistic_collector(Name, I-1);
-        _->
-            stat_loop(Name, 999999)
+get_node([], {CurWeight, Weight, Node}, Total, NodesAcc) ->
+    {Node, [{CurWeight-Total, Weight, Node}|NodesAcc]};
+get_node([{CurWeight, Weight, Node}|Nodes], {GetCurWeight, _, _} = GetNode, Total, NodesAcc) ->
+    CurNode = {CurWeight+Weight, Weight, Node},
+    case CurWeight+Weight > GetCurWeight of
+        true ->
+            get_node(Nodes, CurNode, Total+CurWeight+Weight, [GetNode|NodesAcc]);
+        false ->
+            get_node(Nodes, GetNode, Total+CurWeight+Weight, [CurNode|NodesAcc])
     end.
-
-%% Do not tell the master about our load if it has not  changed
-stat_loop(Name, Old) ->
-    sleep(2000),
-    case statistics(run_queue) of
-	Old ->
-	    stat_loop(Name, Old);
-	NewLoad ->
-        case global:whereis_name(Name) of
-	        Pid when is_pid(Pid) ->
-	            Pid ! {node(), load, NewLoad}, %% async ,
-	            stat_loop(Name, NewLoad);
-	        undefined ->
-                %% master nodedown,need apply node_pool:attach/2 again when reconnect successful.
-	            exit(normal)
-        end    
-    end.
-
-sleep(I) -> receive after I -> ok end.
