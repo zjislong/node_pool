@@ -66,8 +66,7 @@ handle_call(get_node, _From, Nodes) ->
     {N, Nodes1} = get_node(Nodes),
     {reply, N, Nodes1};
 handle_call({attach, Node, Weight}, _From, Nodes) ->
-    erlang:monitor_node(Node, true),
-    {reply, attached, lists:keystore(Node, 3, Nodes, {0,Weight,Node})}.
+    {reply, attached, attach_node(Nodes, Node, Weight, [])}.
 
 handle_cast(_, Nodes) ->
     {noreply, Nodes}.
@@ -93,3 +92,16 @@ get_node([{CurWeight, Weight, Node}|Nodes], {GetCurWeight, _, _} = GetNode, Tota
         false ->
             get_node(Nodes, GetNode, Total+CurWeight+Weight, [CurNode|NodesAcc])
     end.
+
+attach_node([], undefined, _, NodesAcc) ->
+    NodesAcc;
+attach_node([], AttachNode, AttachWeight, NodesAcc) ->
+    erlang:monitor_node(AttachNode, true),
+    [{0, AttachWeight, AttachNode}|NodesAcc];
+attach_node([{_, _, AttachNode}|Nodes], AttachNode, 0, NodesAcc) ->
+    erlang:monitor_node(AttachNode, false),
+    attach_node(Nodes, undefined, 0, NodesAcc);
+attach_node([{_, _, AttachNode}|Nodes], AttachNode, AttachWeight, NodesAcc) ->
+    attach_node(Nodes, undefined, AttachWeight, [{0, AttachWeight, AttachNode}|NodesAcc]);
+attach_node([{_, Weight, Node}|Nodes], AttachNode, AttachWeight, NodesAcc) ->
+    attach_node(Nodes, AttachNode, AttachWeight, [{0, Weight, Node}|NodesAcc]).

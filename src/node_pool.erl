@@ -38,6 +38,7 @@ get_nodes(Name) ->
 attach(Name, Node, Weight) ->
     gen_server:call({global, Name}, {attach, Node, Weight}).
 
+-spec get_nodes_and_load(Name::atom()) -> [{integer(),Weight::integer(),node()}].
 get_nodes_and_load(Name) ->
     gen_server:call({global, Name}, get_nodes).
 
