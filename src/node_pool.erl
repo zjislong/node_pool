@@ -4,12 +4,12 @@
 % User interface Exports ...
 -export([new_pool/1,
 	 delete_pool/1,
-	 get_nodes/1,
-	 get_nodes_and_load/1,
+	 get_nodes/1, 
+	 get_nodes_and_load/1, 
 	 get_node/1,
-	 attach/3]).
+	 attach/2]).
 
-%% User interface
+%% User interface 
 
 -spec new_pool(Name::atom()) -> {ok, pid()}.
 new_pool(Name) ->
@@ -31,14 +31,13 @@ delete_pool(Name) ->
 
 -spec get_nodes(Name::atom()) -> [node()].
 get_nodes(Name) ->
-    get_elements(3, get_nodes_and_load(Name)).
+    get_elements(2, get_nodes_and_load(Name)).
 
--spec attach(Name::atom(),Node,Weight) -> already_attached | attached when
-      Node :: node(),Weight :: non_neg_integer().
-attach(Name, Node, Weight) ->
-    gen_server:call({global, Name}, {attach, Node, Weight}).
+-spec attach(Name::atom(),Node) -> already_attached | attached when
+      Node :: node().
+attach(Name, Node) ->
+    gen_server:call({global, Name}, {attach, Name, Node}).
 
--spec get_nodes_and_load(Name::atom()) -> [{integer(),Weight::integer(),node()}].
 get_nodes_and_load(Name) ->
     gen_server:call({global, Name}, get_nodes).
 
